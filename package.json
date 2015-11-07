@@ -2,6 +2,9 @@
   "name": "realtime-rethinkdb",
   "version": "0.0.1",
   "description": "Realtime app to demonstrate Rethinkdb",
+  "scripts": {
+    "start": "concurrent -k -l 20 -p command 'webpack-dev-server' 'node server'"
+  },
   "author": "Chris Atkins",
   "license": "MIT",
   "devDependencies": {
