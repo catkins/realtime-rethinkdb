@@ -23,6 +23,9 @@ const server = app.listen(3000, () => {
   console.log(`Web server listening at http://localhost:${server.address().port}`);
 });
 
+// add socket.io server
+const io = require('socket.io')(server);
+
 // connect to the database
 const r = require('rethinkdbdash')({
   db: process.env.DATABASE_NAME || 'realtime_rethinkdb',
@@ -117,3 +120,35 @@ function findOrCreateTeam(name) {
   });
 }
 
+io.on('connection', (socket) => {
+  let closeFeed = null;
+
+  fetchLeaderboard().run().then(results => {
+    socket.emit('leaderboard', results);
+  });
+
+  socket.on('join', (data) => {
+    findOrCreateTeam(data.name).then(team => {
+      closeFeed = watchTeam(team, (err, team) => {
+        socket.emit('teamUpdated', team);
+      });
+
+      socket.emit('teamUpdated', team);
+    });
+  });
+
+  socket.on('logout',     () => { closeFeed && closeFeed(); });
+  socket.on('disconnect', () => { closeFeed && closeFeed(); });
+
+  socket.on('click', (data) => {
+    incrementClicksForTeam(data.name);
+  });
+});
+
+watchLeaderboard((err, changes) => {
+  if (err) {
+    console.error(err);
+  } else {
+    io.emit('teamUpdated', changes);
+  }
+});
