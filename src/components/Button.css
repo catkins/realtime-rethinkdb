@@ -1,0 +1,24 @@
+.button {
+  background-color: #214753;
+  color: white;
+  border-radius: 50%;
+  width: 15rem;
+  height: 15rem;
+  font-size: 5rem;
+  border: none;
+  text-align: center;
+  vertical-align: middle;
+  padding: 0;
+  text-shadow: 0.3rem 0.3rem 1rem rgba(0, 0, 0, 0.66);
+  box-shadow: 0.4rem 0.4rem 1rem rgba(0, 0, 0, 0.8);
+  outline: none;
+  transition: all 700ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:active {
+  box-shadow: 0.3rem 0.3rem 1rem rgba(0, 0, 0, 0.66);
+  transition: all 100ms;
+  background-color: #3C616D;
+  text-shadow: 0.4rem 0.4rem 1rem rgba(0, 0, 0, 0.8);
+}

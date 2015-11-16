@@ -1,52 +1,93 @@
-import React, { Component } from 'react';
-import 'normalize.css'
+import React, { Component, PropTypes } from 'react';
+import 'normalize.css';
 import styles from './App.css';
+import lodash from 'lodash';
 
-export default class App extends Component {
+import Leaderboard from './Leaderboard';
+import LoginForm from './LoginForm';
+import Button from './Button';
+
+class App extends Component {
+  static propTypes = {
+    socket: PropTypes.object
+  }
+
   constructor(props) {
     super(props);
     this.state = {
-      numberOfClicks: 0
+      numberOfClicks: 0,
+      name: null,
+      teams: []
     }
   }
 
-  handleClick() {
-    this.setState({
-      numberOfClicks: this.state.numberOfClicks + 1
-    });
+  componentDidMount() {
+    const { socket } = this.props;
+    socket.on('leaderboard', ::this.initLeaderboard);
+    socket.on('teamUpdated', ::this.updateLeaderboard);
   }
 
-  handleSetName() {
-    const input = this.refs.nameInput;
-    const name = input.value;
-    if (name) {
-      this.setState({ name });
+  updateLeaderboard(updatedPlayer) {
+    if (updatedPlayer.name === this.state.name) {
+      this.setState({ numberOfClicks: updatedPlayer.clicks });
     }
+
+    const teams = lodash.chain(this.state.teams)
+      .reject(p => p.name === updatedPlayer.name)
+      .push(updatedPlayer)
+      .sortBy(p => -p.clicks)
+      .take(10)
+      .value();
+
+    this.setState({ teams });
+  }
+
+  initLeaderboard(teams) {
+    this.setState({ teams: teams });
+  }
+
+  buttonPressed() {
+    const { name, numberOfClicks } = this.state;
+    this.props.socket.emit('click', { name });
+
+    // optimistic updates #ux
+    this.setState({ numberOfClicks: numberOfClicks + 1 });
+    return false;
+  }
+
+  handleLogin(name) {
+    this.props.socket.emit('join', { name })
+    this.setState({ name });
+  }
+
+  handleLogout() {
+    const { name } = this.state;
+    this.props.socket.emit('logout', { name })
+    this.setState({ name: null })
   }
 
   render() {
-    const childComponent = this.state.name
-      ? (
-        <button
-          className={styles.button}
-          onClick={::this.handleClick}>
-          You have clicked me {this.state.numberOfClicks} times
-        </button>
-      )
-      : (
-        <div>
-          <label>Name</label>
-          <input ref="nameInput" name="name"></input>
-          <button onClick={::this.handleSetName}>Set name</button>
-        </div>
-      );
-
     return (
       <div id="wrapper" className={styles.wrapper}>
-        <h1>Realtime RethinkDB demo</h1>
+        <h1>ClickSquad</h1>
 
-        {childComponent}
+        <LoginForm
+          onLogin={::this.handleLogin}
+          onLogout={::this.handleLogout}
+          teamName={this.state.name} />
+
+        <Leaderboard
+          teams={this.state.teams}
+          activeTeam={this.state.name} />
+
+        {this.state.name
+          ? <Button
+              onClick={::this.buttonPressed}
+              numberOfClicks={this.state.numberOfClicks} />
+          : null}
       </div>
     )
   }
 }
+
+export default App;
