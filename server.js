@@ -27,6 +27,7 @@ const server = app.listen(3000, () => {
 const io = require('socket.io')(server);
 
 // connect to the database
+// rethinkdbdash provides transparent connection pooling
 const r = require('rethinkdbdash')({
   db: process.env.DATABASE_NAME || 'realtime_rethinkdb',
   servers: [{
@@ -34,6 +35,17 @@ const r = require('rethinkdbdash')({
     port: parseInt(process.env.DATABASE_PORT) || 28015
   }]
 });
+
+// * DATABASE SETUP
+// * visit data explorer at http://localhost:8080/#dataexplorer
+
+// r.dbCreate('realtime_rethinkdb')
+// r.db('realtime_rethinkdb').tableCreate('teams')
+// r.db('realtime_rethinkdb').table('teams').indexCreate('clicks')
+// r.db('realtime_rethinkdb').table('teams').indexCreate('name')
+
+
+// * RETHINKDB QUERIES
 
 // SELECT *
 // FROM teams
@@ -44,39 +56,6 @@ function fetchLeaderboard() {
    .orderBy({ index: r.desc('clicks')})
    .limit(10);
 };
-
-function watchLeaderboard(callback) {
-  fetchLeaderboard()
-  .changes()
-  .map(r.row('new_val'))
-  .run((err, cursor) => {
-    if (err) {
-      callback(err);
-      return;
-    }
-    cursor.each(callback);
-  });
-};
-
-function watchTeam(team, callback) {
-  let stopWatching;
-
-  r.table('teams')
-  .get(team.id)
-  .changes()
-  .map(r.row('new_val'))
-  .run((err, cursor) => {
-    if (err) {
-      callback(err);
-      return;
-    }
-
-    stopWatching = cursor.close.bind(cursor);
-    cursor.each(callback);
-  });
-
-  return () => { stopWatching && stopWatching(); };
-}
 
 // UPDATE teams
 //    SET updated_at = now(),
@@ -109,41 +88,52 @@ const findTeamByName = (name) => {
 function createTeamWithName(name) {
   return r.table('teams')
     .insert({ name, clicks: 0 }, { returnChanges: true })
-    .run().then(result => {
+    .run().then((result) => {
       return result.changes[0]['new_val'];
     });
 };
 
 function findOrCreateTeam(name) {
-  return findTeamByName(name).catch(error => {
+  return findTeamByName(name).catch((error) => {
     return createTeamWithName(name)
   });
 }
 
-io.on('connection', (socket) => {
-  let closeFeed = null;
 
-  fetchLeaderboard().run().then(results => {
-    socket.emit('leaderboard', results);
+// * CHANGEFEEDS
+function watchLeaderboard(callback) {
+  fetchLeaderboard()
+  .changes()
+  .map(r.row('new_val'))
+  .run((err, cursor) => {
+    if (err) {
+      callback(err);
+      return;
+    }
+
+    cursor.each(callback);
+  });
+};
+
+function watchTeam(team, callback) {
+  let stopWatching;
+
+  r.table('teams')
+  .get(team.id)
+  .changes()
+  .map(r.row('new_val'))
+  .run((err, cursor) => {
+    if (err) {
+      callback(err);
+      return;
+    }
+
+    stopWatching = () => cursor.close();
+    cursor.each(callback);
   });
 
-  socket.on('join', (data) => {
-    findOrCreateTeam(data.name).then(team => {
-      closeFeed = watchTeam(team, (err, team) => {
-        socket.emit('teamUpdated', team);
-      });
-
-      socket.emit('teamUpdated', team);
-    });
-  });
-
-  socket.on('logout',     () => { closeFeed && closeFeed(); });
-  socket.on('disconnect', () => { closeFeed && closeFeed(); });
-
-  socket.on('click', (data) => {
-    incrementClicksForTeam(data.name);
-  });
-});
+  return () => { stopWatching && stopWatching(); };
+}
 
 watchLeaderboard((err, changes) => {
   if (err) {
@@ -151,4 +141,35 @@ watchLeaderboard((err, changes) => {
   } else {
     io.emit('teamUpdated', changes);
   }
+});
+
+io.on('connection', (socket) => {
+  // send the current leaderboard on connection
+  fetchLeaderboard().run().then((results) => {
+    socket.emit('leaderboard', results);
+  });
+
+  let stopWatching = null;
+
+  // User hit the 'Join Team' button
+  socket.on('join', (data) => {
+    findOrCreateTeam(data.name).then((team) => {
+      // send initial state
+      socket.emit('teamUpdated', team);
+
+      // send any changes for *that* user
+      // regardless of position on the leaderboard
+      stopWatching = watchTeam(team, (err, team) => {
+        socket.emit('teamUpdated', team);
+      });
+    });
+  });
+
+  // lets not keep these changefeeds ticking over if the user has left
+  socket.on('logout',     () => { stopWatching && stopWatching(); });
+  socket.on('disconnect', () => { stopWatching && stopWatching(); });
+
+  socket.on('click', (data) => {
+    incrementClicksForTeam(data.name);
+  });
 });

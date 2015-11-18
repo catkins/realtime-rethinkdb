@@ -27,6 +27,10 @@ class App extends Component {
     socket.on('teamUpdated', ::this.updateLeaderboard);
   }
 
+  initLeaderboard(teams) {
+    this.setState({ teams: teams });
+  }
+
   updateLeaderboard(updatedPlayer) {
     if (updatedPlayer.name === this.state.name) {
       this.setState({ numberOfClicks: updatedPlayer.clicks });
@@ -40,10 +44,6 @@ class App extends Component {
       .value();
 
     this.setState({ teams });
-  }
-
-  initLeaderboard(teams) {
-    this.setState({ teams: teams });
   }
 
   buttonPressed() {
